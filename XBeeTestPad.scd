@@ -4,6 +4,9 @@ SerialPort.devices;
 ~coordinator.start;
 ~coordinator.rxAction_({arg byte; "Coordinator received: \t%\t%\t%".format(byte.asHexString(2), byte, byte.asAscii).postln;});
 ~coordinatorData = (address: [0x00, 0x13, 0xA2, 0x00, 0x40, 0x90, 0x28, 0x75], networkAddress: [0x00, 0x00]);
+~coordinator.responseActions.put(\ZigBeeReceivePacket, {arg realAddr, networkAddr, data;
+	"ZigBee RX: %".format([realAddr, networkAddr, data]).postln;
+});
 
 ~router = XBeeDeviceAPIMode(SerialPort('/dev/tty.usbserial-FTCVPEA5', 9600, crtscts:true));
 ~router.start;
@@ -12,11 +15,11 @@ SerialPort.devices;
 
 ~ledData = (address: [0x00, 0x13, 0xA2, 0x00, 0x40, 0x90, 0x29, 0x1B], networkAddress: [0xFF, 0xFE]);
 )
-~coordinator.sendRemoteTX(~routerData.address, ~routerData.networkAddress, "hallo".ascii, 1);
+~coordinator.sendRemoteTX(~routerData.address, ~routerData.networkAddress, "aaaaa".ascii, 1);
 ~coordinator.sendRemoteTX(~ledData.address, ~ledData.networkAddress, ["ms".ascii, 100, 13, 10].flatten, 1);
 ~coordinator.sendRemoteTX(~ledData.address, ~ledData.networkAddress, ["ms".ascii, 0, 13, 10].flatten, 1);
 //sending to led don't work
-~router.sendRemoteTX(~coordinatorData.address, ~coordinatorData.networkAddress, "hallo".ascii, 1);
+~router.sendRemoteTX(~coordinatorData.address, ~coordinatorData.networkAddress, "bbbbb".ascii, 1);
 ~router.sendRemoteTX(~ledData.address, ~ledData.networkAddress, ["ms".ascii, 100, 13, 10].flatten, 0);
 ~router.sendRemoteTX(~ledData.address, ~ledData.networkAddress, ["ms".ascii, 0, 13, 10].flatten, 0);
 //sending to coordinator
@@ -38,7 +41,7 @@ SerialPort.devices;
 ~coordinator.sendRemoteATCommand(~routerData.address, ~routerData.networkAddress, "AC");
 ~coordinator.sendRemoteTX(~routerData.address, ~routerData.networkAddress, "hallo".ascii);
 ~coordinator.sendRemoteATCommand(~routerData.address, ~routerData.networkAddress, "BD", 3);
-~router.serialPort.put(23);
+~router.serialPort.putAll("heisann");
 t = fork { loop { ~router.serialPort.putAll([11,22,33,44,55,66]); 0.1.wait} };
 u = fork{loop{ ~coordinator.sendRemoteTX(~routerData.address, ~routerData.networkAddress, "hallo".ascii, 1);0.75.wait;}}
 
@@ -51,7 +54,10 @@ u = fork{loop{ ~coordinator.sendRemoteTX(~routerData.address, ~routerData.networ
 0x6F / 1024
 
 ~coordinator.sendLocalATCommand("D5");
-~router.serialPort.putAll("hei".ascii);
+~router.serialPort.putAll("xxxxx".ascii);
+
+
+Dictionary[0xF04EAB3C -> "Hallo"].at(-263279812);
 
 
 (
@@ -122,4 +128,34 @@ fork{ (255..0).do{|i| ~togLED3.setLEDValue(i); 0.01.wait;}}
 ~coordinator.serialPort.put(44)
 
 
-XBeeAPI.frameTypeByteCodes
+XBeeAPI.frameTypeByteCodes\
+
+
+XBeeAPIParser.prParseAddressBytes([0x5A, 0x83]);
+XBeeAPIParser.prParseAddressBytes([255, 255]);
+
+
+
+
+
+(
+var result, n = 5000;
+a = Array.rand(n, 0.0, 1.0);
+b = Array.rand(n, 0.0, 1.0);
+
+result = 5000.collect{
+	{
+		n.do{|i| a[i].div(b[i])}
+	}.bench(false)
+};
+"A: Min: % Max: % Median: %".format(result.minItem, result.maxItem, result.median).postln;
+result = 5000.collect{
+	{
+		n.do{|i| a[i] div: b[i]}
+	}.bench(false)
+};
+"B: Min: % Max: % Median: %".format(result.minItem, result.maxItem, result.median).postln;
+)
+
+
+9 div: 3

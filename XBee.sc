@@ -1,7 +1,10 @@
+///An XBee device is a device which is physcially connected to the computer via a serial port
 XBeeDevice {
-	var serialPort;
+	var <serialPort;
 	var <>rxAction;
-	var parseRoutine;
+	var parseRoutine, parser;
+	var <childDevices;
+	var <responseActions;
 
 	*new {arg serialPort;
 		^super.new.init(serialPort);
@@ -9,23 +12,28 @@ XBeeDevice {
 
 	init{ arg serialPort_;
 		serialPort = serialPort_;
+		childDevices = Dictionary.new;
+		responseActions = IdentityDictionary.new;
 		"XBeeAPI initialized".postln;
 	}
+
+	*parseStates{ ^this.subclassResponsibility; }
 }
 
 XBeeDeviceAPIMode : XBeeDevice {
-	var nextFrameID = 1;
-	var frameIdResponseActions;
+	var frameIDResponseActions;
+	var nextFrameID = 0;
 
 	init{arg serialPort_;
 		super.init(serialPort_);
-		frameIdResponseActions = Array.newClear(255);//frameID specific responders are stored here
+		parser = XBeeAPIParser.new(this);
+		frameIDResponseActions = Array.newClear(255);//frameID specific responders are stored here
 	}
 
 	nextFrameID {
-		var oldFrameId = nextFrameID;
+		var oldFrameID = nextFrameID;
 		nextFrameID = ((nextFrameID % 255) + 1);
-		^oldFrameId;
+		^oldFrameID;
 	}
 
 	sendRemoteTX{arg serialAddressArray, networkAddressArray, payload, options = 0;
@@ -38,17 +46,17 @@ XBeeDeviceAPIMode : XBeeDevice {
 	}
 
 	sendRemoteATCommand{arg serialAddressArray, networkAddressArray, command, parameter;
-		var frame, payload, frameTypeCode;
+		var frame, payload, frameTypeByteCode;
 		payload = [0x02, command.ascii, parameter].flat.reject(_.isNil);//prepend 0x02 for apply changes
-		frameTypeCode = this.class.frameTypeByteCodes.at(\ZigBeeTransmitRequest);
-		frame = this.frameRemoteCommand(serialAddressArray, networkAddressArray, frameTypeCode, payload);
+		frameTypeByteCode = XBeeAPI.frameTypeByteCodes.at(\RemoteCommandRequest);
+		frame = this.frameRemoteCommand(serialAddressArray, networkAddressArray, frameTypeByteCode, payload);
 		this.sendAPIFrame(frame);
 	}
 
 	sendLocalATCommand{arg command, parameter;
 		var payload, frame;
 		payload = [command.ascii, parameter].flat.reject(_.isNil);
-		frame = this.frameCommand(this.class.localATCommand, payload);
+		frame = this.frameCommand(XBeeAPI.frameTypeByteCodes.at(\ATCommand), payload);
 		this.sendAPIFrame(frame);
 	}
 
@@ -81,15 +89,6 @@ XBeeDeviceAPIMode : XBeeDevice {
 		serialPort.putAll(frame);
 	}
 
-	parseRXFrame { arg length;
-		var serialAddr = "", networkAddr, receiveOption, data;
-		8.do { serialAddr = serialAddr ++ serialPort.read.asHexString(2) };
-		networkAddr = ( serialPort.read << 8).bitOr( serialPort.read );
-		receiveOption = serialPort.read;
-		data = {serialPort.read} ! (length - 12);
-		rxAction.value(serialAddr, networkAddr, receiveOption, data);
-	}
-
 	start{
 		if((parseRoutine.isPlaying.not) or: (parseRoutine.isNil)) {
 			parseRoutine = Routine({
@@ -97,13 +96,7 @@ XBeeDeviceAPIMode : XBeeDevice {
 				inf.do {
 					byte = serialPort.read;
 					rxAction.value(byte);
-					/*if(byte == 126) {
-					length = (serialPort.read << 8).bitOr(serialPort.read);
-					frameType = serialPort.read;
-					switch(frameType,
-					144, { this.parseRXFrame(length); }//0x90
-					);
-					}*/
+					parser.parseByte(byte);
 				}
 			}).play;
 		}
@@ -117,6 +110,139 @@ XBeeDeviceAPIMode : XBeeDevice {
 			parseRoutine.stop;
 		}
 	}
+}
+
+//AnXBeeDeviceProcy is a XBee device connected via another XBee device's network.
+
+//Abstract base class for XBee parser classes
+XBeeParser{
+	var state;
+	var device;
+	var parseFunctions;
+
+	init{ ^this.subclassResponsibility; }
+
+	parseByte{arg byte;
+		parseFunctions.at(state).value(byte);
+	}
+
+	*prParseAddressBytes{arg bytes;
+		var result = 0;
+		bytes.reverseDo{arg item, i;
+			result = result.bitOr(item << (i * 8));
+		};
+		^result;
+	}
+}
+
+XBeeAPIParser : XBeeParser {
+	var numLengthBytesReceived;
+	var frameByteBuffer;
+	var frameDataParseFunctions;
+	var currentFrameType;
+	var currentFrameID;
+	var expectedFrameLength;
+	var <>doChecksumVerification;
+
+	*new{arg device;
+		^super.new.init(device);
+	}
+
+	init{arg device_;
+		device = device_;
+		state = \waitingForStartDelimiter;
+		frameByteBuffer = Array.new(128);//ZigBee protocol maximum packet size
+		numLengthBytesReceived = 0;
+		expectedFrameLength = 0;
+		doChecksumVerification = false;
+
+		parseFunctions = IdentityDictionary[
+			\waitingForStartDelimiter -> {arg byte;
+				if(byte == XBeeAPI.startDelimiter, {
+					frameByteBuffer = Array.new(128);
+					numLengthBytesReceived = 0;
+					state = \waitingForLength;
+				});
+			},
+			\waitingForLength -> {arg byte;
+				switch(numLengthBytesReceived,
+					0, {
+						expectedFrameLength = byte << 8;
+						numLengthBytesReceived = 1;
+					},
+					1, {
+						expectedFrameLength = expectedFrameLength.bitOr(byte.bitAnd(0xFF));
+						state = \waitingForFrameData;
+					}
+				)
+			},
+			\waitingForFrameData -> {arg byte;
+				frameByteBuffer.add(byte);
+				if(frameByteBuffer.size >= expectedFrameLength, {
+					state = \waitingForChecksum;
+				})
+			},
+			\waitingForChecksum -> {arg byte;
+				if(doChecksumVerification,
+					{/*do checksum test here*/ this.parseFrameBytes;},
+					{this.parseFrameBytes;}
+				);
+				state = \waitingForStartDelimiter;
+			}
+		];
+
+		frameDataParseFunctions = IdentityDictionary[
+			/*\ATCommand -> {arg byte; currentFrameData.at()},
+			\ATCommandQueued -> 0x09,
+			\ZigBeeTransmitRequest -> 0x10,
+			\ExplicitAddressingZigBeeCommandFrame -> 0x11,
+			\RemoteCommandRequest -> 0x17,
+			\CreateSourceRoute -> 0x21,
+			\ATCommandResponse -> 0x88,
+			\ModemStatus -> 0x8A,
+			\ZigBeeTransmitStatus -> 0x8B,
+			\ZigBeeReceivePacket -> 0x90,
+			\ZigBeeExplicitRxIndicator -> 0x91,
+			\ZigBeeIODataSampleIndicator -> 0x92,
+			\XBeeSensorReadIndicator -> 0x94,
+			\NodeIdentificationIndicator -> 0x95,
+			\RemoteCommandResponser -> 0x97,
+			\OverTheAirFirmwareUpdateStatus -> 0xA0,
+			\RouteRecordIndicator -> 0xA1*/
+		];
+	}
+
+	parseFrameBytes{
+		var frameType, frameID;
+		frameType = XBeeAPI.frameTypeByteCodes.getID(frameByteBuffer.first);
+		frameID = frameByteBuffer[1];
+
+		//we have store these in frameType and frameID, so we don't need them anymore. Reversing array for popping.
+		frameByteBuffer = frameByteBuffer.drop(2).reverse;
+		switch(frameType,
+			\ZigBeeReceivePacket, {
+				var address64Bit, networkAddr, receiveOptions, receivedData;
+				address64Bit = this.class.prParseAddressBytes( { frameByteBuffer.pop } ! 8 );
+				networkAddr = this.class.prParseAddressBytes( { frameByteBuffer.pop } ! 2 );
+				receiveOptions = frameByteBuffer.pop;
+				receivedData = frameByteBuffer.copy;
+				"got a recived UART frame".postln;
+				device.responseActions.at(\ZigBeeReceivePacket).value(address64Bit, networkAddr, receivedData);
+			},\ZigBeeTransmitStatus, {
+				var networkAddr, numRetries, deliveryStatus, discoveryStatus;
+				networkAddr = this.class.prParseAddressBytes( { frameByteBuffer.pop } ! 2 );
+				numRetries = frameByteBuffer.pop;
+				deliveryStatus = frameByteBuffer.pop;
+				discoveryStatus = frameByteBuffer.pop;
+				"ZigBeeTransmitStatus: \n\tnetworkAddr: % \n\tnumRetries: % \n\tdeliveryStatus: % \n\tdiscoveryStatus: %".format(
+					networkAddr, numRetries, deliveryStatus.asHexString(2), discoveryStatus.asHexString(2)
+				).postln;
+			}
+		);
+		"The buff:{%} %".format(XBeeAPI.frameTypeByteCodes.getID(frameByteBuffer.first), frameByteBuffer.collect(_.asHexString(2))).postln;
+		"As chars: %".format(frameByteBuffer.collect(_.asAscii)).postln;
+	}
+
 }
 
 XBeeAPI {
@@ -142,7 +268,7 @@ XBeeAPI {
 			\ZigBeeIODataSampleIndicator -> 0x92,
 			\XBeeSensorReadIndicator -> 0x94,
 			\NodeIdentificationIndicator -> 0x95,
-			\RemoteCommandResponser -> 0x97,
+			\RemoteCommandResponse -> 0x97,
 			\OverTheAirFirmwareUpdateStatus -> 0xA0,
 			\RouteRecordIndicator -> 0xA1
 		];
@@ -336,44 +462,44 @@ XBeeAPI {
 
 /// Maybe superfluous stuff:
 
-	// sendRemoteATCommand{arg serialAddressArray, networkAddressArray, command, parameter;
-	// 	var frame, payload, frameTypeCode;
-	// 	payload = [0x02, command.ascii, parameter].flat.reject(_.isNil);//prepend 0x02 for apply changes
-	// 	frameTypeCode = this.class.frameTypeByteCodes.at(\ZigBeeTransmitRequest);
-	// 	frame = this.frameRemoteCommand(serialAddressArray, networkAddressArray, frameTypeCode, payload);
-	// 	this.sendAPIFrame(frame);
-	// }
-	//
-	// sendLocalATCommand{arg command, parameter;
-	// 	var payload, frame;
-	// 	payload = [command.ascii, parameter].flat.reject(_.isNil);
-	// 	frame = this.frameCommand(this.class.localATCommand, payload);
-	// 	this.sendAPIFrame(frame);
-	// }
-	//
-	// frameRemoteCommand{arg serialAddressArray, networkAddressArray, frameType, payload;
-	// 	payload = [serialAddressArray, networkAddressArray, payload].flat;
-	// 	^this.frameCommand(frameType, payload);
-	// }
-	//
-	// frameCommand{arg frameType, payload;
-	// 	var frame, lengthMSB, lengthLSB, checksum, payloadLength, frameID;
-	// 	payloadLength = payload.size + 1 /*frameType*/ + 1 /*frameID*/;
-	// 	lengthMSB = payloadLength >> 8;
-	// 	lengthLSB = payloadLength.bitAnd(0xFF);
-	// 	frameID = this.getFrameID;
-	// 	checksum = 0xFF - [frameType, frameID, payload].flat.sum.bitAnd(0xFF);
-	// 	frame = [
-	// 		this.class.startDelimiter,
-	// 		lengthMSB,
-	// 		lengthLSB,
-	// 		frameType,
-	// 		frameID,
-	// 		payload,
-	// 		checksum
-	// 	].flatten;
-	// 	^frame;
-	// }
-	//
+// sendRemoteATCommand{arg serialAddressArray, networkAddressArray, command, parameter;
+// 	var frame, payload, frameTypeCode;
+// 	payload = [0x02, command.ascii, parameter].flat.reject(_.isNil);//prepend 0x02 for apply changes
+// 	frameTypeCode = this.class.frameTypeByteCodes.at(\ZigBeeTransmitRequest);
+// 	frame = this.frameRemoteCommand(serialAddressArray, networkAddressArray, frameTypeCode, payload);
+// 	this.sendAPIFrame(frame);
+// }
+//
+// sendLocalATCommand{arg command, parameter;
+// 	var payload, frame;
+// 	payload = [command.ascii, parameter].flat.reject(_.isNil);
+// 	frame = this.frameCommand(this.class.localATCommand, payload);
+// 	this.sendAPIFrame(frame);
+// }
+//
+// frameRemoteCommand{arg serialAddressArray, networkAddressArray, frameType, payload;
+// 	payload = [serialAddressArray, networkAddressArray, payload].flat;
+// 	^this.frameCommand(frameType, payload);
+// }
+//
+// frameCommand{arg frameType, payload;
+// 	var frame, lengthMSB, lengthLSB, checksum, payloadLength, frameID;
+// 	payloadLength = payload.size + 1 /*frameType*/ + 1 /*frameID*/;
+// 	lengthMSB = payloadLength >> 8;
+// 	lengthLSB = payloadLength.bitAnd(0xFF);
+// 	frameID = this.getFrameID;
+// 	checksum = 0xFF - [frameType, frameID, payload].flat.sum.bitAnd(0xFF);
+// 	frame = [
+// 		this.class.startDelimiter,
+// 		lengthMSB,
+// 		lengthLSB,
+// 		frameType,
+// 		frameID,
+// 		payload,
+// 		checksum
+// 	].flatten;
+// 	^frame;
+// }
+//
 
 
