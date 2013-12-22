@@ -112,7 +112,7 @@ XBeeDeviceAPIMode : XBeeDevice {
 	}
 }
 
-//AnXBeeDeviceProcy is a XBee device connected via another XBee device's network.
+//A XBeeDeviceProxy is a XBee device connected via another XBee device's network.
 
 //Abstract base class for XBee parser classes
 XBeeParser{
