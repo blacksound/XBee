@@ -28,7 +28,7 @@ XBeeAPI {
 		atCommandCodes = TwoWayIdentityDictionary[
 			//Addressing commands
 			\DestinationAddressHigh -> 'DH',//CRE
-			\DestinationAddressHigh -> 'DL',//CRE,
+			\DestinationAddressLow -> 'DL',//CRE,
 			\NetworkAddress -> 'MY',//CRE
 			\ParentNetworkAddress -> 'MP',//E
 			\NumberOfRemainingChildren -> 'NC',//CR

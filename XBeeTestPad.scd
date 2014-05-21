@@ -48,18 +48,35 @@ SerialPort.devices;
 ~coordinator = XBeeCoordinatorAPIMode(SerialPort('/dev/tty.usbserial-A600ezu2', 9600, crtscts: true));
 ~coordinator.start;
 ~coordinator.rxAction_({arg byte; "Coordinator received: \t%\t%\t%".format(byte.asHexString(2), byte, byte.asAscii).postln;});
+~router = SerialPort("/dev/tty.usbserial-FTCVPEA5", 9600, crtscts: true);
+Tdef(\routerRead, {loop{"Router: %".format(~router.read).postln;}}).play;
+)
+~router.putAll("hiie");
+
+~coordinator.getChildDeviceByName('TOG01').sendTXData("hei".ascii);
+~coordinator.getChildDeviceByName('TOG01').sendTXData("hei".ascii, false);
+
+
+
+~coordinator.sendATCommand('DestinationNode', "TOG01".ascii);
+
+~coordinator.sendATCommand('DestinationAddressLow', responseAction:{arg frameData; "MYTURN:%".format(frameData).postln});
+~coordinator.sendATCommand('DestinationAddressLow');
+
+~coordinator.sendATCommand('NodeDiscover');
+~coordinator.sendATCommand('NodeDiscover', "TOG01".ascii);
+
+(
+~coordinator.childDevices.keysValuesDo({arg key,val;
+	"Name: %[%]\n\taddress: %\n\tserial number: %:%\n\troute:%".format(
+		val.nodeIdentifier, val.class, val.networkAddress, val.addressHi, val.addressLo, val.route
+	).postln;
+})
 )
 
-~router = SerialPort("/dev/tty.usbserial-FTCVPEA5", 9600, crtscts: true);
-~router.putAll("hiie");
-Tdef(\routerRead, {loop{"Router: %".format(~router.read).postln;}}).play;
 
 
-~coordinator.childDevices[1084996231].nodeIdentifier
-~coordinator.sendATCommand(XBeeAPI.atCommandCodes['NodeIdentifier'])
 
-136.asHexString
-
-String.newFrom([65, 67].collect(_.asAscii))
-
-"MY".ascii
+a = Dictionary[234 -> {"hei".postln}]
+b = a.removeAt(234)
+a
