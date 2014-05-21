@@ -207,7 +207,11 @@ XBeeDeviceAPIMode : XBeeDevice {
 					frameData[\sourceNetworkAddress], frameData[\nodeIdentifier]
 				);
 			},
-			\ZigBeeReceivePacket, {"UART data:".postln;},
+			\ZigBeeReceivePacket, {
+				var childDevice = childDevices.at(frameData[\sourceAddressLo]);
+				childDevice !? {childDevice.rxAction.value(frameData[\data])};
+				"UART data:".postln;
+			},
 			\RouteRecordIndicator, {
 				"Got route Record Indicator: [%] %".format(frameData[\sourceAddressLo], frameData[\networkRoute]).postln;
 				printAddress.value;
@@ -237,10 +241,8 @@ XBeeDeviceAPIMode : XBeeDevice {
 		"\tFrame data".postln;
 		frameData.keysValuesDo({arg key,val;
 			if(val.isString.not and: {val.class != Symbol}, {
-				if(val.isArray, {
-					val = val.collect(_.asHexString);
-					}, {
-						val = val.asHexString;
+				if(val.isArray.not, {
+					val = val.asHexString;
 				});
 			});
 			"\t[%]: %".format(key,val).postln;

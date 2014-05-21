@@ -51,9 +51,11 @@ SerialPort.devices;
 ~router = SerialPort("/dev/tty.usbserial-FTCVPEA5", 9600, crtscts: true);
 Tdef(\routerRead, {loop{"Router: %".format(~router.read).postln;}}).play;
 )
-~router.putAll("hiie");
+~router.putAll("Eirik");
 
 ~coordinator.getChildDeviceByName('TOG01').sendTXData("hei".ascii);
+~coordinator.getChildDeviceByName('TOG01').rxAction_({arg data; "RX ACtioin: %".format(data).postln;})
+
 ~coordinator.getChildDeviceByName('TOG01').sendTXData("hei".ascii, false);
 
 

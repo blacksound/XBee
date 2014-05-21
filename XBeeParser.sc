@@ -145,9 +145,11 @@ XBeeAPIParser : XBeeParser {
 		"Parsing frame type: %".format(frameType).postln;
 		switch(frameType,
 			\ZigBeeReceivePacket, {
+				var data;
 				parseAddress.value(frameData);
 				frameData.put(\receiveOptions, bufferStream.next);
-				frameData.put(\data, bufferStream.asArray);
+				bufferStream.do{arg item; data = data.add(item);};
+				frameData.put(\data, data);
 				parseSuccess = true;
 			},
 			\ZigBeeTransmitStatus, {
