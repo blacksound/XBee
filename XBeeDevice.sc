@@ -105,7 +105,7 @@ XBeeDeviceAPIMode : XBeeDevice {
 			cmdBytes ++ parameterBytes,
 			responseAction: responseAction
 		);
-		"Queued AT frame: %".format(frame).postln;
+		//"Queued AT frame: %".format(frame).postln;
 		this.sendAPIFrame(frame);
 	}
 
@@ -164,7 +164,7 @@ XBeeDeviceAPIMode : XBeeDevice {
 	}
 
 	sendAPIFrame{arg frame;
-		"sending frame: %".format(frame.collect(_.asHexString(2))).postln;
+		//"sending frame: %".format(frame.collect(_.asHexString(2))).postln;
 		serialPort.putAll(frame);
 	}
 
@@ -200,7 +200,7 @@ XBeeDeviceAPIMode : XBeeDevice {
 		switch(frameType,
 			\NodeIdentificationIndicator, {
 				var deviceType;
-				printAddress.value;
+				//printAddress.value;
 				deviceType = #[\coordinator, \router, \endDevice].at(frameData[\deviceType]);
 				this.prRegisterChildDevice( deviceType,
 					frameData[\sourceAddressHi], frameData[\sourceAddressLo],
@@ -210,11 +210,11 @@ XBeeDeviceAPIMode : XBeeDevice {
 			\ZigBeeReceivePacket, {
 				var childDevice = childDevices.at(frameData[\sourceAddressLo]);
 				childDevice !? {childDevice.rxAction.value(frameData[\data])};
-				"UART data:".postln;
+				//"UART data:".postln;
 			},
 			\RouteRecordIndicator, {
-				"Got route Record Indicator: [%] %".format(frameData[\sourceAddressLo], frameData[\networkRoute]).postln;
-				printAddress.value;
+				//"Got route Record Indicator: [%] %".format(frameData[\sourceAddressLo], frameData[\networkRoute]).postln;
+				//printAddress.value;
 				childDeviceRoutes.put(frameData[\sourceAddressLo], frameData[\networkRoute]);
 				if(autoUpdateSourceRoutes, {
 					this.createSourceRoute();
@@ -224,7 +224,7 @@ XBeeDeviceAPIMode : XBeeDevice {
 				if(frameData['ATCommand'] == 'ND' and: {frameData[\commandStatus] == 'OK'}, {
 					var newNodeData;
 					newNodeData = XBeeParser.parseNodeDiscoverResponse(frameData[\commandData]);
-					"NewNodeData: \t%".format(newNodeData).postln;
+					//"NewNodeData: \t%".format(newNodeData).postln;
 					this.prRegisterChildDevice(
 						deviceType: #[\coordinator, \router, \endDevice].at(newNodeData[\deviceType]),
 						sourceAddrHi: newNodeData[\sourceAddressHi],
@@ -238,15 +238,15 @@ XBeeDeviceAPIMode : XBeeDevice {
 				})
 			}
 		);
-		"\tFrame data".postln;
-		frameData.keysValuesDo({arg key,val;
-			if(val.isString.not and: {val.class != Symbol}, {
-				if(val.isArray.not, {
-					val = val.asHexString;
-				});
-			});
-			"\t[%]: %".format(key,val).postln;
-		});
+		// "\tFrame data".postln;
+		// frameData.keysValuesDo({arg key,val;
+		// 	if(val.isString.not and: {val.class != Symbol}, {
+		// 		if(val.isArray.not, {
+		// 			val = val.asHexString;
+		// 		});
+		// 	});
+		// 	"\t[%]: %".format(key,val).postln;
+		// });
 	}
 
 	prDoResponseAction{arg frameID, frameData;
