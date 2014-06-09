@@ -50,7 +50,7 @@ XBeeParser{
 	*prParseNullTerminatedStringFromByteStream{arg byteStream;
 		var result, currentByte;
 		currentByte = byteStream.next;
-		while({currentByte != 0 and: {currentByte.notNil}}, {
+		while({currentByte.notNil and: {currentByte != 0}}, {
 			result = result.add(currentByte.asAscii);
 			currentByte = byteStream.next;
 		});
@@ -161,7 +161,6 @@ XBeeAPIParser : XBeeParser {
 				parseSuccess = true;
 			},
 			\NodeIdentificationIndicator, {
-				"for real".postln;
 				parseAddress.value(frameData);
 				frameData.put(\receiveOptions, bufferStream.next);
 				frameData.put(\remoteNetworkAddress, this.class.prParseAddressBytes( { bufferStream.next } ! 2 ));
@@ -174,7 +173,6 @@ XBeeAPIParser : XBeeParser {
 				frameData.put(\digiProfileID, {bufferStream.next} ! 2);
 				frameData.put(\manufacturerID, {bufferStream.next} ! 2);
 				parseSuccess = true;
-				"babe".postln
 			},
 			\ATCommandResponse, {
 				var commandStatus;
@@ -207,18 +205,5 @@ XBeeAPIParser : XBeeParser {
 				).warn;
 				"\tFrame byte buffer: % ".format(frameByteBuffer).postln;
 		})
-
 	}
-
-	popFrameBytesUntilNull{
-		var result, nullFound = false;
-		while({nullFound.not}, {
-			var val = frameByteBuffer.next;
-			if(val == 0, {
-				nullFound = true;
-			}, {result = result.add(val);});
-		});
-		^result;
-	}
-
 }
