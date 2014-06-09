@@ -50,7 +50,7 @@ XBeeParser{
 	*prParseNullTerminatedStringFromByteStream{arg byteStream;
 		var result, currentByte;
 		currentByte = byteStream.next;
-		while({currentByte != 0} or: {currentByte.notNil}, {
+		while({currentByte.notNil and: {currentByte != 0}}, {
 			result = result.add(currentByte.asAscii);
 			currentByte = byteStream.next;
 		});
@@ -161,18 +161,31 @@ XBeeAPIParser : XBeeParser {
 				parseSuccess = true;
 			},
 			\NodeIdentificationIndicator, {
+				"Pasring start".postln;
 				parseAddress.value(frameData);
+				"A".postln;
 				frameData.put(\receiveOptions, bufferStream.next);
+				"B".postln;
 				frameData.put(\remoteNetworkAddress, this.class.prParseAddressBytes( { bufferStream.next } ! 2 ));
+				"C".postln;
 				frameData.put(\remoteAddressHi, this.class.prParseAddressBytes( { bufferStream.next } ! 4 ));
+				"D".postln;
 				frameData.put(\remoteAddressLo, this.class.prParseAddressBytes( { bufferStream.next } ! 4 ));
-				frameData.put(\nodeIdentifier, String.newFrom(this.popFrameBytesUntilNull.collect(_.asAscii)));
+				"E".postln;
+				frameData.put(\nodeIdentifier, String.newFrom(this.class.prParseNullTerminatedStringFromByteStream(bufferStream).collect(_.asAscii)));
+				"F".postln;
 				frameData.put(\parentNetworkAddr, this.class.prParseAddressBytes({bufferStream.next} ! 2));
+				"G".postln;
 				frameData.put(\deviceType, bufferStream.next);
+				"H".postln;
 				frameData.put(\sourceEvent, bufferStream.next);
+				"I".postln;
 				frameData.put(\digiProfileID, {bufferStream.next} ! 2);
+				"J".postln;
 				frameData.put(\manufacturerID, {bufferStream.next} ! 2);
+				"K".postln;
 				parseSuccess = true;
+				"Parse done".postln;
 			},
 			\ATCommandResponse, {
 				var commandStatus;
@@ -205,18 +218,5 @@ XBeeAPIParser : XBeeParser {
 				).warn;
 				"\tFrame byte buffer: % ".format(frameByteBuffer).postln;
 		})
-
 	}
-
-	popFrameBytesUntilNull{
-		var result, nullFound = false;
-		while({nullFound.not}, {
-			var val = frameByteBuffer.next;
-			if(val == 0, {
-				nullFound = true;
-			}, {result = result.add(val);});
-		});
-		^result;
-	}
-
 }
