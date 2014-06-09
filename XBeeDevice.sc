@@ -37,7 +37,7 @@ XBeeDevice {
 		this.class.initATCommands.do({arg cmd, i;
 			if(cmd != this.class.initATCommands.last, {
 				this.sendQueuedATCommand(cmd);
-			}, {
+				}, {
 					this.sendATCommand(cmd);
 			});
 		});
@@ -57,15 +57,19 @@ XBeeDevice {
 	//overriden as empty method in endDevice ipmlementation
 	prRegisterChildDevice{arg deviceType, sourceAddrHi, sourceAddrLo, sourceNetworkAddr, nodeIdentifier;
 		var deviceClass, newDevice;
-		deviceClass = switch(deviceType,
-			\coordinator, {XBeeCoordinatorProxy},
-			\router, {XBeeRouterProxy},
-			\endDevice, {XBeeEndDeviceProxy}
-		);
-		newDevice = deviceClass.new(this, sourceAddrHi, sourceAddrLo, sourceNetworkAddr, nodeIdentifier);
-		childDevices.put(newDevice.addressLo, newDevice);
-		this.changed(\childDeviceRegistered, newDevice);
-		"Device % % % joined network".format(newDevice.nodeIdentifier, newDevice.networkAddress, newDevice.addressLo).postln;
+		if(childDevices.includesKey(sourceAddrLo).not, {
+			deviceClass = switch(deviceType,
+				\coordinator, {XBeeCoordinatorProxy},
+				\router, {XBeeRouterProxy},
+				\endDevice, {XBeeEndDeviceProxy}
+			);
+			newDevice = deviceClass.new(this, sourceAddrHi, sourceAddrLo, sourceNetworkAddr, nodeIdentifier);
+			childDevices.put(newDevice.addressLo, newDevice);
+			this.changed(\childDeviceRegistered, newDevice);
+			"Device % % % joined network".format(newDevice.nodeIdentifier, newDevice.networkAddress, newDevice.addressLo).postln;
+		}, {
+				"Device % % % already joined".format(nodeIdentifier, sourceNetworkAddr, sourceAddrLo).postln;
+		});
 	}
 }
 
@@ -132,10 +136,17 @@ XBeeDeviceAPIMode : XBeeDevice {
 	}
 
 	frameRemoteCommand{arg addressHi, addressLo, networkAddress, frameType, payload, sendFrameID;
+		var addrHigh, netAddr;
+		if(addressHi.isNil, {
+			addrHigh = XBeeAPI.defaultSerialAddressHigh;
+		}, {addrHigh = XBeeParser.unpackAddressBytes(addressHi, 4)});
+		if(networkAddress.isNil, {
+			netAddr = 0xFFFE;
+		}, {netAddr = XBeeParser.unpackAddressBytes(networkAddress, 2)});
 		payload = [
-			XBeeParser.unpackAddressBytes(addressHi, 4),
+			addrHigh,
 			XBeeParser.unpackAddressBytes(addressLo, 4),
-			XBeeParser.unpackAddressBytes(networkAddress, 2),
+			netAddr,
 			payload].flat;
 		^this.frameCommand(frameType, payload, sendFrameID);
 	}
@@ -199,12 +210,12 @@ XBeeDeviceAPIMode : XBeeDevice {
 		};
 		switch(frameType,
 			\NodeIdentificationIndicator, {
-				var deviceType;
-				//printAddress.value;
-				deviceType = #[\coordinator, \router, \endDevice].at(frameData[\deviceType]);
-				this.prRegisterChildDevice( deviceType,
-					frameData[\sourceAddressHi], frameData[\sourceAddressLo],
-					frameData[\sourceNetworkAddress], frameData[\nodeIdentifier]
+				this.prRegisterChildDevice(
+					deviceType: #[\coordinator, \router, \endDevice].at(frameData[\deviceType]),
+					sourceAddrHi: frameData[\sourceAddressHi],
+					sourceAddrLo: frameData[\sourceAddressLo],
+					sourceNetworkAddr: frameData[\sourceNetworkAddress],
+					nodeIdentifier: frameData[\nodeIdentifier]
 				);
 			},
 			\ZigBeeReceivePacket, {

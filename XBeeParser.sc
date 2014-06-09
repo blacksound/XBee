@@ -50,7 +50,7 @@ XBeeParser{
 	*prParseNullTerminatedStringFromByteStream{arg byteStream;
 		var result, currentByte;
 		currentByte = byteStream.next;
-		while({currentByte != 0} or: {currentByte.notNil}, {
+		while({currentByte != 0 and: {currentByte.notNil}}, {
 			result = result.add(currentByte.asAscii);
 			currentByte = byteStream.next;
 		});
@@ -142,7 +142,7 @@ XBeeAPIParser : XBeeParser {
 		};
 		frameByte = bufferStream.next;
 		frameType = XBeeAPI.frameTypeByteCodes.getID(frameByte);
-		//"Parsing frame type: %".format(frameType).postln;
+		"Parsing frame type: %".format(frameType).postln;
 		switch(frameType,
 			\ZigBeeReceivePacket, {
 				var data;
@@ -161,18 +161,20 @@ XBeeAPIParser : XBeeParser {
 				parseSuccess = true;
 			},
 			\NodeIdentificationIndicator, {
+				"for real".postln;
 				parseAddress.value(frameData);
 				frameData.put(\receiveOptions, bufferStream.next);
 				frameData.put(\remoteNetworkAddress, this.class.prParseAddressBytes( { bufferStream.next } ! 2 ));
 				frameData.put(\remoteAddressHi, this.class.prParseAddressBytes( { bufferStream.next } ! 4 ));
 				frameData.put(\remoteAddressLo, this.class.prParseAddressBytes( { bufferStream.next } ! 4 ));
-				frameData.put(\nodeIdentifier, String.newFrom(this.popFrameBytesUntilNull.collect(_.asAscii)));
+				frameData.put(\nodeIdentifier, this.class.prParseNullTerminatedStringFromByteStream(bufferStream));
 				frameData.put(\parentNetworkAddr, this.class.prParseAddressBytes({bufferStream.next} ! 2));
 				frameData.put(\deviceType, bufferStream.next);
 				frameData.put(\sourceEvent, bufferStream.next);
 				frameData.put(\digiProfileID, {bufferStream.next} ! 2);
 				frameData.put(\manufacturerID, {bufferStream.next} ! 2);
 				parseSuccess = true;
+				"babe".postln
 			},
 			\ATCommandResponse, {
 				var commandStatus;
