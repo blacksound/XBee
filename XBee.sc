@@ -3,6 +3,7 @@ XBeeAPI {
 	classvar <frameTypeByteCodes;
 	classvar <startDelimiter = 0x7E;
 	classvar <broadcastSerialAddress;
+	classvar <xbeeDefaultSerialAddressHi = 0x0013A200;
 
 	*initClass {
 		broadcastSerialAddress = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF];

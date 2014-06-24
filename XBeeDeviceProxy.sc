@@ -10,6 +10,8 @@ XBeeDeviceProxy {
 	var <nodeIdentifier;
 	var <panID;
 	var <>rxAction;
+	var <queueUpdateInterval = 0.02;
+	var txQueue, txQueueRoutine;
 
 	*new{arg parent, addressHi, addressLo, networkAddress, nodeIdentifier;
 		^super.newCopyArgs(parent, addressHi, addressLo, networkAddress, nodeIdentifier).init;
@@ -18,6 +20,18 @@ XBeeDeviceProxy {
 	init{
 		//ensure that node identifier is symbol
 		nodeIdentifier !? {nodeIdentifier = nodeIdentifier.asSymbol;};
+		txQueue = LinkedList.new;
+		txQueueRoutine = Routine({
+			var msg;
+			loop{
+				msg = txQueue.popFirst;
+				if(msg.notNil, {
+					"Sending from queue: %".format(msg).postln;
+					this.sendTXData(*msg);
+				}, {/*"Stopping and reset".postln;*/thisThread.stop;});
+				queueUpdateInterval.wait;
+			};
+		});
 	}
 
 	route_{arg newRoute;
@@ -30,6 +44,19 @@ XBeeDeviceProxy {
 
 	sendTXData{arg bytes, sendFrameID;
 		parent.sendTransmitRequest(addressHi, addressLo, networkAddress, bytes, sendFrameID);
+	}
+
+	sendTXDataQueued{arg bytes, sendFrameID;
+		txQueue.add([bytes, sendFrameID]);
+		if(txQueueRoutine.isPlaying.not, {
+			/*"Starting queue playing".postln;*/
+			txQueueRoutine.reset;
+			txQueueRoutine.play;
+		});
+	}
+
+	queueUpdateInterval_{arg val;
+		queueUpdateInterval = val.clip(0.001, 1);
 	}
 }
 

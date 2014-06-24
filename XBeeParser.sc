@@ -161,31 +161,18 @@ XBeeAPIParser : XBeeParser {
 				parseSuccess = true;
 			},
 			\NodeIdentificationIndicator, {
-				"Pasring start".postln;
 				parseAddress.value(frameData);
-				"A".postln;
 				frameData.put(\receiveOptions, bufferStream.next);
-				"B".postln;
 				frameData.put(\remoteNetworkAddress, this.class.prParseAddressBytes( { bufferStream.next } ! 2 ));
-				"C".postln;
 				frameData.put(\remoteAddressHi, this.class.prParseAddressBytes( { bufferStream.next } ! 4 ));
-				"D".postln;
 				frameData.put(\remoteAddressLo, this.class.prParseAddressBytes( { bufferStream.next } ! 4 ));
-				"E".postln;
 				frameData.put(\nodeIdentifier, String.newFrom(this.class.prParseNullTerminatedStringFromByteStream(bufferStream).collect(_.asAscii)));
-				"F".postln;
 				frameData.put(\parentNetworkAddr, this.class.prParseAddressBytes({bufferStream.next} ! 2));
-				"G".postln;
 				frameData.put(\deviceType, bufferStream.next);
-				"H".postln;
 				frameData.put(\sourceEvent, bufferStream.next);
-				"I".postln;
 				frameData.put(\digiProfileID, {bufferStream.next} ! 2);
-				"J".postln;
 				frameData.put(\manufacturerID, {bufferStream.next} ! 2);
-				"K".postln;
 				parseSuccess = true;
-				"Parse done".postln;
 			},
 			\ATCommandResponse, {
 				var commandStatus;

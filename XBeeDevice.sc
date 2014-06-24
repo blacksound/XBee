@@ -11,7 +11,7 @@ XBeeDevice {
 	var <childDevices;
 	var <responseActions;
 	var <childDeviceRoutes;
-	var <>autoUpdateSourceRoutes = true;
+	var <>autoUpdateSourceRoutes = false;
 
 	classvar <initATCommands;
 
@@ -37,7 +37,7 @@ XBeeDevice {
 		this.class.initATCommands.do({arg cmd, i;
 			if(cmd != this.class.initATCommands.last, {
 				this.sendQueuedATCommand(cmd);
-			}, {
+				}, {
 					this.sendATCommand(cmd);
 			});
 		});
@@ -123,7 +123,33 @@ XBeeDeviceAPIMode : XBeeDevice {
 	}
 	sendExplicitAddrCmdFrame{}
 	sendRemoteATCommandRequest{}
-	createSourceRoute{}
+
+	createSourceRoute{arg sourceAddressLo, sourceNetworkAddress, networkRoute;
+		var payload, routeBytes;
+		payload = XBeeParser.unpackAddressBytes(XBeeAPI.xbeeDefaultSerialAddressHi, 4);
+		payload = payload ++ XBeeParser.unpackAddressBytes(sourceAddressLo, 4);
+		payload = payload ++ XBeeParser.unpackAddressBytes(sourceAddressLo, 2);
+		payload = payload ++ [0];
+		if(networkRoute.size == 0,
+			{
+				payload = payload ++ [0];
+				//payload = payload ++ [0,0];
+			},
+			{
+				payload = payload ++ networkRoute.size;
+				payload = payload ++ networkRoute.collect({arg item;
+					XBeeParser.unpackAddressBytes(item, 2);
+				}).flat;
+			}
+		);
+		// "Creating source route: %, %, %".format(sourceAddressLo, sourceNetworkAddress, networkRoute).postln;
+		// "Payload: %".format(payload).postln;
+		this.frameCommand(
+			frameType: XBeeAPI.frameTypeByteCodes[\CreateSourceRoute],
+			payload: payload,
+			sendFrameID: false
+		);
+	}
 
 	nextFrameID {
 		var oldFrameID = nextFrameID;
@@ -217,7 +243,7 @@ XBeeDeviceAPIMode : XBeeDevice {
 				//printAddress.value;
 				childDeviceRoutes.put(frameData[\sourceAddressLo], frameData[\networkRoute]);
 				if(autoUpdateSourceRoutes, {
-					this.createSourceRoute();
+					this.createSourceRoute(frameData[\sourceAddressLo], frameData['sourceNetworkAddress'], frameData[\networkRoute]);
 				});
 			},
 			\ATCommandResponse, {
@@ -235,18 +261,13 @@ XBeeDeviceAPIMode : XBeeDevice {
 				});
 				if(frameData['frameID'] > 0, {
 					this.prDoResponseAction(frameData['frameID'], frameData);
-				})
-			}
+				});
+				"ATcommand response: %".format(frameData).postln;
+			}/*,
+			\ZigBeeTransmitStatus, {
+				"Transmit status: %".format(frameData).postln;
+			}*/
 		);
-		// "\tFrame data".postln;
-		// frameData.keysValuesDo({arg key,val;
-		// 	if(val.isString.not and: {val.class != Symbol}, {
-		// 		if(val.isArray.not, {
-		// 			val = val.asHexString;
-		// 		});
-		// 	});
-		// 	"\t[%]: %".format(key,val).postln;
-		// });
 	}
 
 	prDoResponseAction{arg frameID, frameData;
