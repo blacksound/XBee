@@ -142,7 +142,7 @@ XBeeAPIParser : XBeeParser {
 		};
 		frameByte = bufferStream.next;
 		frameType = XBeeAPI.frameTypeByteCodes.getID(frameByte);
-		"Parsing frame type: %".format(frameType).postln;
+		//"Parsing frame type: %".format(frameType).postln;
 		switch(frameType,
 			\ZigBeeReceivePacket, {
 				var data;
