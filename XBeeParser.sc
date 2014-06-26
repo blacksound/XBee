@@ -186,25 +186,47 @@ XBeeAPIParser : XBeeParser {
 			},
 			\RouteRecordIndicator, {
 				"A: frameByteBuffer: %".format(frameByteBuffer).postln;
-				frameData.put(\sourceAddressHi, this.class.prParseAddressBytes( bufferStream.nextN(4) ));
-				frameData.put(\sourceAddressLo, this.class.prParseAddressBytes( bufferStream.nextN(4) ));
-				frameData.put(\sourceNetworkAddress, this.class.prParseAddressBytes( bufferStream.nextN(2) ));
-				frameData.put(\receiveOptions,
-					#['PacketAcknownledged', 'BroadcastPacket'].at(bufferStream.next)
+				if(frameByteBuffer.size < 13,
+					{
+						"Unknown route record indicator:%".format(frameByteBuffer).postln;
+						parseSuccess = false;
+					},
+					{
+						frameData.put(\sourceAddressHi, this.class.prParseAddressBytes( bufferStream.nextN(4) ));
+						frameData.put(\sourceAddressLo, this.class.prParseAddressBytes( bufferStream.nextN(4) ));
+						frameData.put(\sourceNetworkAddress, this.class.prParseAddressBytes( bufferStream.nextN(2) ));
+						frameData.put(\receiveOptions,
+							#['PacketAcknownledged', 'BroadcastPacket'].at(bufferStream.next)
+						);
+						frameData.put(\networkRoute, bufferStream.next.collect{arg i;
+							this.class.prParseAddressBytes( bufferStream.nextN(2) );
+						});
+						parseSuccess = true;
+					}
 				);
-				frameData.put(\networkRoute, bufferStream.next.collect{arg i;
-					this.class.prParseAddressBytes( bufferStream.nextN(2) );
-				});
+			},
+			\ModemStatus, {
+				var status;
+				status = Dictionary[
+					0 -> \hardwareReset, 1 -> \watchdogTimerReset, 2 -> \joinedNetwork, 3 -> \disassociated,
+					6 -> \coordinatorStarted, 7 -> \networkSecurityKeyupdated, 13 -> \voltageSupplyLimitExceeded,
+					17 -> \modemConfigChangedWhileJoinInProcess, {|it|it >= 128} -> \stackError
+				].matchAt(bufferStream.next);
+				frameData.put(\status, status ? \unknown);
 				parseSuccess = true;
 			}
 		);
-		if(parseSuccess, {
-			device.prGotAPIFrame(frameType, frameData);
-			}, {
-				"Frame type parsing not implemented for: %".format(
-					XBeeAPI.frameTypeByteCodes.getID(frameByte);
-				).warn;
-				"\tFrame byte buffer: % ".format(frameByteBuffer).postln;
-		})
+		if(parseSuccess,
+			{
+				device.prGotAPIFrame(frameType, frameData);
+			},
+			{
+				// "Frame type parsing not implemented for: %".format(
+				// 	XBeeAPI.frameTypeByteCodes.getID(frameByte);
+				// ).warn;
+				//"\tFrame byte buffer: % ".format(frameByteBuffer).postln;
+				"Unsucessful parsing of frame: %".format(frameByteBuffer).postln;
+			}
+		)
 	}
 }
