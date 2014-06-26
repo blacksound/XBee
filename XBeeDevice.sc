@@ -12,7 +12,7 @@ XBeeDevice {
 	var <responseActions;
 	var <childDeviceRoutes;
 	var <>autoUpdateSourceRoutes = false;
-
+	var <>zigBeeTransmitStatusAction;
 	classvar <initATCommands;
 
 	*initClass{
@@ -66,8 +66,14 @@ XBeeDevice {
 			newDevice = deviceClass.new(this, sourceAddrHi, sourceAddrLo, sourceNetworkAddr, nodeIdentifier);
 			childDevices.put(newDevice.addressLo, newDevice);
 			this.changed(\childDeviceRegistered, newDevice);
+			this.sendATCommand(\AggregateRoutingNotification, [0]);
 			"Device % % % joined network".format(newDevice.nodeIdentifier, newDevice.networkAddress, newDevice.addressLo).postln;
 		}, {
+				//update remote XBee data as this might have changed
+				newDevice = childDevices.at(sourceAddrLo);
+				newDevice.networkAddress_(sourceNetworkAddr);
+				newDevice.nodeIdentifier_(nodeIdentifier);
+				this.sendATCommand(\AggregateRoutingNotification, [0]);
 				"Device % % % already joined".format(nodeIdentifier, sourceNetworkAddr, sourceAddrLo).postln;
 		});
 	}
@@ -274,10 +280,13 @@ XBeeDeviceAPIMode : XBeeDevice {
 					this.prDoResponseAction(frameData['frameID'], frameData);
 				});
 				"ATcommand response: %".format(frameData).postln;
-			}/*,
+			},
 			\ZigBeeTransmitStatus, {
-				"Transmit status: %".format(frameData).postln;
-			}*/
+				zigBeeTransmitStatusAction.value(frameData);
+			},
+			\ModemStatus, {
+				this.changed(\modemStatus, frameData);
+			}
 		);
 	}
 
