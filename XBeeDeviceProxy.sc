@@ -42,7 +42,7 @@ XBeeDeviceProxy {
 		^parent.childDeviceRoutes.at(addressLo);
 	}
 
-	sendTXData{arg bytes, sendFrameID;
+	sendTXData{arg bytes, sendFrameID = false;
 		parent.sendTransmitRequest(addressHi, addressLo, networkAddress, bytes, sendFrameID);
 	}
 
@@ -58,6 +58,11 @@ XBeeDeviceProxy {
 	queueUpdateInterval_{arg val;
 		queueUpdateInterval = val.clip(0.001, 1);
 	}
+
+	addressHi_ {arg val; addressHi = val; this.changed(\addressHi);}
+	addressLo_ {arg val; addressLo = val; this.changed(\addressLo);}
+	networkAddress_ {arg val; networkAddress = val; this.changed(\networkAddress);}
+	nodeIdentifier_ {arg val; nodeIdentifier = val; this.changed(\nodeIdentifier);}
 }
 
 XBeeCoordinatorProxy : XBeeDeviceProxy {
