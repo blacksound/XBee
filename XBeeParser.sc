@@ -131,9 +131,9 @@ XBeeAPIParser : XBeeParser {
 		var frameType, frameData = IdentityDictionary.new, frameByte, parseSuccess = false;
 		bufferStream = frameByteBuffer.iter;
 		parseAddress = {arg coll;
-			coll.put(\sourceAddressHi, this.class.prParseAddressBytes({ bufferStream.next } ! 4));
-			coll.put(\sourceAddressLo, this.class.prParseAddressBytes({ bufferStream.next } ! 4));
-			coll.put(\sourceNetworkAddress, this.class.prParseAddressBytes({ bufferStream.next } ! 2));
+			coll.put(\sourceAddressHi, this.class.prParseAddressBytes(bufferStream.nextN(4)));
+			coll.put(\sourceAddressLo, this.class.prParseAddressBytes(bufferStream.nextN(4)));
+			coll.put(\sourceNetworkAddress, this.class.prParseAddressBytes(bufferStream.nextN(2)));
 		};
 		getRemainingBytes = {arg stream;
 			var result;
@@ -142,7 +142,7 @@ XBeeAPIParser : XBeeParser {
 		};
 		frameByte = bufferStream.next;
 		frameType = XBeeAPI.frameTypeByteCodes.getID(frameByte);
-		//"Parsing frame type: %".format(frameType).postln;
+		"Parsing frame type: %".format(frameType).postln;
 		switch(frameType,
 			\ZigBeeReceivePacket, {
 				var data;
@@ -154,7 +154,7 @@ XBeeAPIParser : XBeeParser {
 			},
 			\ZigBeeTransmitStatus, {
 				frameData.put(\frameID, bufferStream.next);
-				frameData.put(\destinationAddress, this.class.prParseAddressBytes({ bufferStream.next } ! 2));
+				frameData.put(\destinationAddress, this.class.prParseAddressBytes( bufferStream.nextN(2) ));
 				frameData.put(\retryCount, bufferStream.next);
 				frameData.put(\deliveryStatus, bufferStream.next);
 				frameData.put(\discoveryStatus, bufferStream.next);
@@ -163,21 +163,21 @@ XBeeAPIParser : XBeeParser {
 			\NodeIdentificationIndicator, {
 				parseAddress.value(frameData);
 				frameData.put(\receiveOptions, bufferStream.next);
-				frameData.put(\remoteNetworkAddress, this.class.prParseAddressBytes( { bufferStream.next } ! 2 ));
-				frameData.put(\remoteAddressHi, this.class.prParseAddressBytes( { bufferStream.next } ! 4 ));
-				frameData.put(\remoteAddressLo, this.class.prParseAddressBytes( { bufferStream.next } ! 4 ));
+				frameData.put(\remoteNetworkAddress, this.class.prParseAddressBytes( bufferStream.nextN(2) ));
+				frameData.put(\remoteAddressHi, this.class.prParseAddressBytes( bufferStream.nextN(4)));
+				frameData.put(\remoteAddressLo, this.class.prParseAddressBytes( bufferStream.nextN(4)));
 				frameData.put(\nodeIdentifier, String.newFrom(this.class.prParseNullTerminatedStringFromByteStream(bufferStream).collect(_.asAscii)));
-				frameData.put(\parentNetworkAddr, this.class.prParseAddressBytes({bufferStream.next} ! 2));
+				frameData.put(\parentNetworkAddr, this.class.prParseAddressBytes( bufferStream.nextN(2) ));
 				frameData.put(\deviceType, bufferStream.next);
 				frameData.put(\sourceEvent, bufferStream.next);
-				frameData.put(\digiProfileID, {bufferStream.next} ! 2);
-				frameData.put(\manufacturerID, {bufferStream.next} ! 2);
+				frameData.put(\digiProfileID, bufferStream.nextN(2) );
+				frameData.put(\manufacturerID, bufferStream.nextN(2) );
 				parseSuccess = true;
 			},
 			\ATCommandResponse, {
 				var commandStatus;
 				frameData.put(\frameID, bufferStream.next);
-				frameData.put('ATCommand', String.newFrom({bufferStream.next.asAscii} ! 2).asSymbol);
+				frameData.put('ATCommand', String.newFrom( bufferStream.nextN(2).collect(_.asAscii) ).asSymbol);
 				commandStatus = #['OK', 'ERROR', 'InvalidCommand',
 					'InvalidParameter', 'TxFailure'].at(bufferStream.next);
 				frameData.put('commandStatus', commandStatus);
@@ -185,14 +185,15 @@ XBeeAPIParser : XBeeParser {
 				parseSuccess = true;
 			},
 			\RouteRecordIndicator, {
-				frameData.put(\sourceAddressHi, this.class.prParseAddressBytes({bufferStream.next} ! 4));
-				frameData.put(\sourceAddressLo, this.class.prParseAddressBytes({bufferStream.next} ! 4));
-				frameData.put(\sourceNetworkAddress, this.class.prParseAddressBytes({bufferStream.next} ! 2));
+				"A: frameByteBuffer: %".format(frameByteBuffer).postln;
+				frameData.put(\sourceAddressHi, this.class.prParseAddressBytes( bufferStream.nextN(4) ));
+				frameData.put(\sourceAddressLo, this.class.prParseAddressBytes( bufferStream.nextN(4) ));
+				frameData.put(\sourceNetworkAddress, this.class.prParseAddressBytes( bufferStream.nextN(2) ));
 				frameData.put(\receiveOptions,
 					#['PacketAcknownledged', 'BroadcastPacket'].at(bufferStream.next)
 				);
 				frameData.put(\networkRoute, bufferStream.next.collect{arg i;
-					this.class.prParseAddressBytes({bufferStream.next} ! 2);
+					this.class.prParseAddressBytes( bufferStream.nextN(2) );
 				});
 				parseSuccess = true;
 			}
