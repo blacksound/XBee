@@ -12,6 +12,10 @@ XBeeDeviceProxy {
 	var <>rxAction;
 	var <queueUpdateInterval = 0.02;
 	var txQueue, txQueueRoutine;
+	var <rssiMonitorRoutine;
+	var <signalStrength;
+	var <online = true; //assuming online status at object creation time
+	var <rssi;
 
 	*new{arg parent, addressHi, addressLo, networkAddress, nodeIdentifier;
 		^super.newCopyArgs(parent, addressHi, addressLo, networkAddress, nodeIdentifier).init;
@@ -32,7 +36,30 @@ XBeeDeviceProxy {
 				queueUpdateInterval.wait;
 			};
 		});
+
+		//monitoring the connection by default
+		rssiMonitorRoutine = fork{
+			var cond, rssiResponseFunc;
+			cond = Condition.new;
+			rssiResponseFunc = {arg data;
+				rssi = data[\commandData];
+				cond.test = data[\commandStatus] != 4;
+				cond.signal;
+			};
+			SimpleController.new(this).put(\online, {arg theChanged, what, more;
+				cond.test = theChanged.online;
+				cond.signal;
+			}.inEnvir);
+			loop{
+				this.sendATCommand(\ReceivedSignalStrength, responseAction: rssiResponseFunc.inEnvir);
+				cond.wait;
+				cond.test = false;
+				2.0.wait;
+			};
+		};
+
 	}
+
 
 	route_{arg newRoute;
 		parent.childDeviceRoutes.put(addressLo, newRoute);
@@ -43,7 +70,7 @@ XBeeDeviceProxy {
 	}
 
 	sendTXData{arg bytes, sendFrameID = false;
-		parent.sendTransmitRequest(addressHi, addressLo, networkAddress, bytes, sendFrameID);
+		online.if{parent.sendTransmitRequest(addressHi, addressLo, networkAddress, bytes, sendFrameID); /*"sentTX".postln*/};
 	}
 
 	sendTXDataQueued{arg bytes, sendFrameID;
@@ -55,6 +82,10 @@ XBeeDeviceProxy {
 		});
 	}
 
+	sendATCommand{arg cmd, parameterBytes, responseAction;
+		online.if{parent.sendRemoteATCommandRequest(addressHi, addressLo, networkAddress, cmd, parameterBytes, responseAction); /*"sentAT".postln*/};
+	}
+
 	queueUpdateInterval_{arg val;
 		queueUpdateInterval = val.clip(0.001, 1);
 	}
@@ -63,6 +94,32 @@ XBeeDeviceProxy {
 	addressLo_ {arg val; addressLo = val; this.changed(\addressLo);}
 	networkAddress_ {arg val; networkAddress = val; this.changed(\networkAddress);}
 	nodeIdentifier_ {arg val; nodeIdentifier = val; this.changed(\nodeIdentifier);}
+
+	prGotCommandResponse{arg frameData;
+		//intercept command status to monitor online status
+		frameData[\commandStatus] !? {this.prRemoteTransmissionStatus(frameData[\commandStatus] != 4);};
+
+		//		"Command response: % %".format(nodeIdentifier, frameData).postln;
+	}
+
+	prRemoteTransmissionStatus{arg val;
+		if(val,
+			{
+				if(online.not, {
+					online = true;
+					"XBee is online: %".format(nodeIdentifier).postln;
+					this.changed(\online, online);
+				});
+			},
+			{
+				if(online, {
+					online = false;
+					"XBee is offline: %".format(nodeIdentifier).postln;
+					this.changed(\online, online);
+				});
+			}
+		);
+	}
 }
 
 XBeeCoordinatorProxy : XBeeDeviceProxy {
