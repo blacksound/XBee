@@ -26,7 +26,7 @@ XBeeDevice {
 
 		//Sending a dummy AT command to "prime" the connection. If seems to help to init problems where
 		//the first AT command is not responded to.
-		this.sendATCommand('SerialNumberHigh');
+		//this.sendATCommand('SerialNumberHigh');
 
 		this.getInitATValuesFromDevice;
 	}
@@ -35,11 +35,11 @@ XBeeDevice {
 		//these values are sent queued
 		this.sendATCommand('SerialNumberLow', responseAction: {arg data; "A: %".format(data).postln;addressLo = XBeeParser.parseAddressBytes(data[\commandData])});
 		this.sendATCommand('SerialNumberHigh', responseAction: {arg data; "B: %".format(data).postln;addressHi = XBeeParser.parseAddressBytes(data[\commandData])});
-		//this.sendATCommand('NetworkAddress', responseAction: {arg data; "C: %".format(data).postln;networkAddress = XBeeParser.parseAddressBytes(data[\commandData])});
-		//this.sendATCommand('NodeIdentifier', responseAction: {arg data;
-		//	"D: %".format(data).postln;
-		//	nodeIdentifier = String.newFrom(data[\dataBytes].collect(_.asAscii));
-		//});
+		this.sendATCommand('NetworkAddress', responseAction: {arg data; "C: %".format(data).postln;networkAddress = XBeeParser.parseAddressBytes(data[\commandData])});
+		this.sendATCommand('NodeIdentifier', responseAction: {arg data;
+			"D: %".format(data).postln;
+			nodeIdentifier = String.newFrom(data[\dataBytes].collect(_.asAscii));
+		});
 		//the last is sent as normal AT command, executing all queued commands on device
 
 	}
@@ -89,10 +89,10 @@ XBeeDevice {
 
 
 XBeeDeviceAPIMode : XBeeDevice {
-	var frameIDResponseActions;
-	var nextFrameID = 0;
+	var frameIDResponseActions, frameIDStream;
 
 	init{arg serialPort_;
+		frameIDStream = (1..255).iter.loop;
 		frameIDResponseActions = Array.newClear(255);//frameID specific responders are stored here
 		parser = XBeeAPIParser.new(this);
 		this.start;
@@ -186,9 +186,7 @@ XBeeDeviceAPIMode : XBeeDevice {
 	}
 
 	nextFrameID {
-		var oldFrameID = nextFrameID;
-		nextFrameID = ((nextFrameID % 255) + 1);
-		^oldFrameID;
+		^frameIDStream.next;
 	}
 
 	frameRemoteCommand{arg addressHi, addressLo, networkAddress, frameType, payload, sendFrameID, responseAction;
@@ -226,7 +224,7 @@ XBeeDeviceAPIMode : XBeeDevice {
 		].flatten;
 		responseAction !? {
 			"putting response action: %, %".format(responseAction, frameID).postln;
-			frameIDResponseActions.put(frameID, responseAction);
+			frameIDResponseActions.put(frameID-1, responseAction);
 		};
 		^frame;
 	}
@@ -323,8 +321,8 @@ XBeeDeviceAPIMode : XBeeDevice {
 
 	prDoResponseAction{arg frameID, frameData;
 		"frameIDResponseActions: %".format(frameIDResponseActions).postln;
-		frameIDResponseActions.at(frameID).value(frameData);
-		frameIDResponseActions.put(frameID, nil);
+		frameIDResponseActions.at(frameID-1).value(frameData);
+		frameIDResponseActions.put(frameID-1, nil);
 	}
 }
 
