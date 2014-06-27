@@ -11,15 +11,8 @@ XBeeDevice {
 	var <childDevices;
 	var <responseActions;
 	var <childDeviceRoutes;
-	var <>autoUpdateSourceRoutes = false;
+	var <>autoUpdateSourceRoutes = true;
 	var <>zigBeeTransmitStatusAction;
-	classvar <initATCommands;
-
-	*initClass{
-		initATCommands = [
-			'NetworkAddress', 'SerialNumberHigh', 'SerialNumberLow', 'NodeIdentifier'
-		];
-	}
 
 	*new {arg serialPort;
 		^super.new.init(serialPort);
@@ -30,17 +23,25 @@ XBeeDevice {
 		childDevices = Dictionary.new;
 		childDeviceRoutes = Dictionary.new;
 		responseActions = IdentityDictionary.new;
-		this.getATValuesFromDevice;
+
+		//Sending a dummy AT command to "prime" the connection. If seems to help to init problems where
+		//the first AT command is not responded to.
+		this.sendATCommand('SerialNumberHigh');
+
+		this.getInitATValuesFromDevice;
 	}
 
-	getATValuesFromDevice{
-		this.class.initATCommands.do({arg cmd, i;
-			if(cmd != this.class.initATCommands.last, {
-				this.sendQueuedATCommand(cmd);
-				}, {
-					this.sendATCommand(cmd);
-			});
-		});
+	getInitATValuesFromDevice{
+		//these values are sent queued
+		this.sendATCommand('SerialNumberLow', responseAction: {arg data; "A: %".format(data).postln;addressLo = XBeeParser.parseAddressBytes(data[\commandData])});
+		this.sendATCommand('SerialNumberHigh', responseAction: {arg data; "B: %".format(data).postln;addressHi = XBeeParser.parseAddressBytes(data[\commandData])});
+		//this.sendATCommand('NetworkAddress', responseAction: {arg data; "C: %".format(data).postln;networkAddress = XBeeParser.parseAddressBytes(data[\commandData])});
+		//this.sendATCommand('NodeIdentifier', responseAction: {arg data;
+		//	"D: %".format(data).postln;
+		//	nodeIdentifier = String.newFrom(data[\dataBytes].collect(_.asAscii));
+		//});
+		//the last is sent as normal AT command, executing all queued commands on device
+
 	}
 
 	getChildDeviceByName{arg name;
@@ -57,6 +58,12 @@ XBeeDevice {
 	//overriden as empty method in endDevice ipmlementation
 	prRegisterChildDevice{arg deviceType, sourceAddrHi, sourceAddrLo, sourceNetworkAddr, nodeIdentifier;
 		var deviceClass, newDevice;
+		//which means it tries to register itself
+		"Comparing: %, % = %".format(sourceAddrLo, addressLo, sourceAddrLo == addressLo).postln;
+		if(sourceAddrLo == addressLo, {
+			"wont register itself".postln;
+			^this;
+		});
 		if(childDevices.includesKey(sourceAddrLo).not, {
 			deviceClass = switch(deviceType,
 				\coordinator, {XBeeCoordinatorProxy},
@@ -74,6 +81,7 @@ XBeeDevice {
 				newDevice.networkAddress_(sourceNetworkAddr);
 				newDevice.nodeIdentifier_(nodeIdentifier);
 				this.sendATCommand(\AggregateRoutingNotification, [0]);
+				newDevice.prRemoteTransmissionStatus(true);
 				"Device % % % already joined".format(nodeIdentifier, sourceNetworkAddr, sourceAddrLo).postln;
 		});
 	}
@@ -85,9 +93,10 @@ XBeeDeviceAPIMode : XBeeDevice {
 	var nextFrameID = 0;
 
 	init{arg serialPort_;
-		super.init(serialPort_);
-		parser = XBeeAPIParser.new(this);
 		frameIDResponseActions = Array.newClear(255);//frameID specific responders are stored here
+		parser = XBeeAPIParser.new(this);
+		this.start;
+		super.init(serialPort_);
 	}
 
 	sendATCommand{arg cmd, parameterBytes, responseAction;
@@ -119,6 +128,21 @@ XBeeDeviceAPIMode : XBeeDevice {
 		this.sendAPIFrame(frame);
 	}
 
+	sendRemoteATCommandRequest{arg addressHi, addressLo, networkAddress = 0xFFFE, cmd, parameterBytes, responseAction;
+		var frame, cmdBytes;
+		cmdBytes = XBeeAPI.atCommandCodes[cmd].ascii;
+		cmdBytes ?? {
+			"Unknown AT command: %".format(cmd).error.throw;
+		};
+		frame = this.frameRemoteCommand(
+			addressHi, addressLo, networkAddress,
+			XBeeAPI.frameTypeByteCodes.at(\RemoteCommandRequest),
+			[0x02]/*apply changes*/ ++ cmdBytes ++ parameterBytes,
+			responseAction: responseAction
+		);
+		this.sendAPIFrame(frame);
+	}
+
 	sendTransmitRequest{
 		arg addressHi, addressLo, networkAddress = 0xFFFE, payload,
 		sendFrameID, broadcastRadius = 0, options = 0;
@@ -132,11 +156,11 @@ XBeeDeviceAPIMode : XBeeDevice {
 		this.sendAPIFrame(frame)
 	}
 	sendExplicitAddrCmdFrame{}
-	sendRemoteATCommandRequest{}
+
 
 	createSourceRoute{arg sourceAddressLo, sourceNetworkAddress, networkRoute;
 		var payload, routeBytes;
-		payload = XBeeParser.unpackAddressBytes(XBeeAPI.xbeeDefaultSerialAddressHi, 4);
+		payload = XBeeParser.unpackAddressBytes(XBeeAPI.defaultSerialAddressHigh, 4);
 		payload = payload ++ XBeeParser.unpackAddressBytes(sourceAddressLo, 4);
 		payload = payload ++ XBeeParser.unpackAddressBytes(sourceAddressLo, 2);
 		payload = payload ++ [0];
@@ -167,7 +191,7 @@ XBeeDeviceAPIMode : XBeeDevice {
 		^oldFrameID;
 	}
 
-	frameRemoteCommand{arg addressHi, addressLo, networkAddress, frameType, payload, sendFrameID;
+	frameRemoteCommand{arg addressHi, addressLo, networkAddress, frameType, payload, sendFrameID, responseAction;
 		var addrHigh, netAddr;
 		if(addressHi.isNil, {
 			addrHigh = XBeeAPI.defaultSerialAddressHigh;
@@ -180,7 +204,7 @@ XBeeDeviceAPIMode : XBeeDevice {
 			XBeeParser.unpackAddressBytes(addressLo, 4),
 			netAddr,
 			payload].flat;
-		^this.frameCommand(frameType, payload, sendFrameID);
+		^this.frameCommand(frameType, payload, sendFrameID, responseAction);
 	}
 
 	frameCommand{arg frameType, payload, sendFrameID, responseAction;
@@ -189,7 +213,7 @@ XBeeDeviceAPIMode : XBeeDevice {
 		payloadLength = payload.size + 1 /*frameType*/ + 1 /*frameID*/;
 		lengthMSB = payloadLength >> 8;
 		lengthLSB = payloadLength.bitAnd(0xFF);
-		frameID = if(sendFrameID, {this.nextFrameID}, {0});
+		frameID = if(sendFrameID or: {responseAction.notNil}, {this.nextFrameID}, {0});
 		checksum = 0xFF - [frameType, frameID, payload].flat.sum.bitAnd(0xFF);
 		frame = [
 			XBeeAPI.startDelimiter,
@@ -201,6 +225,7 @@ XBeeDeviceAPIMode : XBeeDevice {
 			checksum
 		].flatten;
 		responseAction !? {
+			"putting response action: %, %".format(responseAction, frameID).postln;
 			frameIDResponseActions.put(frameID, responseAction);
 		};
 		^frame;
@@ -286,12 +311,20 @@ XBeeDeviceAPIMode : XBeeDevice {
 			},
 			\ModemStatus, {
 				this.changed(\modemStatus, frameData);
+			},
+			\RemoteCommandResponse, {
+				childDevices.at(frameData.at(\sourceAddressLo)).prGotCommandResponse(frameData);
+				if(frameData['frameID'] > 0, {
+					this.prDoResponseAction(frameData['frameID'], frameData);
+				});
 			}
 		);
 	}
 
 	prDoResponseAction{arg frameID, frameData;
-		frameIDResponseActions.removeAt(frameID).value(frameData);
+		"frameIDResponseActions: %".format(frameIDResponseActions).postln;
+		frameIDResponseActions.at(frameID).value(frameData);
+		frameIDResponseActions.put(frameID, nil);
 	}
 }
 
