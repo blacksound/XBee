@@ -23,25 +23,17 @@ XBeeDevice {
 		childDevices = Dictionary.new;
 		childDeviceRoutes = Dictionary.new;
 		responseActions = IdentityDictionary.new;
-
-		//Sending a dummy AT command to "prime" the connection. If seems to help to init problems where
-		//the first AT command is not responded to.
-		//this.sendATCommand('SerialNumberHigh');
-
 		this.getInitATValuesFromDevice;
 	}
 
 	getInitATValuesFromDevice{
-		//these values are sent queued
-		this.sendATCommand('SerialNumberLow', responseAction: {arg data; "A: %".format(data).postln;addressLo = XBeeParser.parseAddressBytes(data[\commandData])});
-		this.sendATCommand('SerialNumberHigh', responseAction: {arg data; "B: %".format(data).postln;addressHi = XBeeParser.parseAddressBytes(data[\commandData])});
-		this.sendATCommand('NetworkAddress', responseAction: {arg data; "C: %".format(data).postln;networkAddress = XBeeParser.parseAddressBytes(data[\commandData])});
-		this.sendATCommand('NodeIdentifier', responseAction: {arg data;
-			"D: %".format(data).postln;
-			nodeIdentifier = String.newFrom(data[\dataBytes].collect(_.asAscii));
-		});
+		this.sendQueuedATCommand('SerialNumberLow', responseAction: {arg data;addressLo = XBeeParser.parseAddressBytes(data[\commandData])});
+		this.sendQueuedATCommand('SerialNumberHigh', responseAction: {arg data;addressHi = XBeeParser.parseAddressBytes(data[\commandData])});
+		this.sendQueuedATCommand('NetworkAddress', responseAction: {arg data;networkAddress = XBeeParser.parseAddressBytes(data[\commandData])});
 		//the last is sent as normal AT command, executing all queued commands on device
-
+		this.sendATCommand('NodeIdentifier', responseAction: {arg data;
+			nodeIdentifier = String.newFrom(data[\commandData].collect(_.asAscii));
+		});
 	}
 
 	getChildDeviceByName{arg name;
@@ -59,7 +51,6 @@ XBeeDevice {
 	prRegisterChildDevice{arg deviceType, sourceAddrHi, sourceAddrLo, sourceNetworkAddr, nodeIdentifier;
 		var deviceClass, newDevice;
 		//which means it tries to register itself
-		"Comparing: %, % = %".format(sourceAddrLo, addressLo, sourceAddrLo == addressLo).postln;
 		if(sourceAddrLo == addressLo, {
 			"wont register itself".postln;
 			^this;
@@ -124,7 +115,6 @@ XBeeDeviceAPIMode : XBeeDevice {
 			cmdBytes ++ parameterBytes,
 			responseAction: responseAction
 		);
-		//"Queued AT frame: %".format(frame).postln;
 		this.sendAPIFrame(frame);
 	}
 
@@ -176,8 +166,6 @@ XBeeDeviceAPIMode : XBeeDevice {
 				}).flat;
 			}
 		);
-		// "Creating source route: %, %, %".format(sourceAddressLo, sourceNetworkAddress, networkRoute).postln;
-		// "Payload: %".format(payload).postln;
 		this.frameCommand(
 			frameType: XBeeAPI.frameTypeByteCodes[\CreateSourceRoute],
 			payload: payload,
@@ -223,14 +211,12 @@ XBeeDeviceAPIMode : XBeeDevice {
 			checksum
 		].flatten;
 		responseAction !? {
-			"putting response action: %, %".format(responseAction, frameID).postln;
 			frameIDResponseActions.put(frameID-1, responseAction);
 		};
 		^frame;
 	}
 
 	sendAPIFrame{arg frame;
-		//"sending frame: %".format(frame.collect(_.asHexString(2))).postln;
 		serialPort.putAll(frame);
 	}
 
@@ -257,12 +243,6 @@ XBeeDeviceAPIMode : XBeeDevice {
 	}
 
 	prGotAPIFrame{arg frameType, frameData;
-		var printAddress = {
-			"Address: % - % networkAddr: %".format(
-				frameData[\sourceAddressHi].asHexString,
-				frameData[\sourceAddressLo].asHexString,
-				frameData[\sourceNetworkAddress].asHexString).postln;
-		};
 		switch(frameType,
 			\NodeIdentificationIndicator, {
 				this.prRegisterChildDevice(
@@ -276,11 +256,8 @@ XBeeDeviceAPIMode : XBeeDevice {
 			\ZigBeeReceivePacket, {
 				var childDevice = childDevices.at(frameData[\sourceAddressLo]);
 				childDevice !? {childDevice.rxAction.value(frameData[\data])};
-				//"UART data:".postln;
 			},
 			\RouteRecordIndicator, {
-				//"Got route Record Indicator: [%] %".format(frameData[\sourceAddressLo], frameData[\networkRoute]).postln;
-				//printAddress.value;
 				childDeviceRoutes.put(frameData[\sourceAddressLo], frameData[\networkRoute]);
 				if(autoUpdateSourceRoutes, {
 					this.createSourceRoute(frameData[\sourceAddressLo], frameData['sourceNetworkAddress'], frameData[\networkRoute]);
@@ -290,7 +267,6 @@ XBeeDeviceAPIMode : XBeeDevice {
 				if(frameData['ATCommand'] == 'ND' and: {frameData[\commandStatus] == 'OK'}, {
 					var newNodeData;
 					newNodeData = XBeeParser.parseNodeDiscoverResponse(frameData[\commandData]);
-					//"NewNodeData: \t%".format(newNodeData).postln;
 					this.prRegisterChildDevice(
 						deviceType: #[\coordinator, \router, \endDevice].at(newNodeData[\deviceType]),
 						sourceAddrHi: newNodeData[\sourceAddressHi],
@@ -302,7 +278,6 @@ XBeeDeviceAPIMode : XBeeDevice {
 				if(frameData['frameID'] > 0, {
 					this.prDoResponseAction(frameData['frameID'], frameData);
 				});
-				"ATcommand response: %".format(frameData).postln;
 			},
 			\ZigBeeTransmitStatus, {
 				zigBeeTransmitStatusAction.value(frameData);
@@ -320,7 +295,6 @@ XBeeDeviceAPIMode : XBeeDevice {
 	}
 
 	prDoResponseAction{arg frameID, frameData;
-		"frameIDResponseActions: %".format(frameIDResponseActions).postln;
 		frameIDResponseActions.at(frameID-1).value(frameData);
 		frameIDResponseActions.put(frameID-1, nil);
 	}
