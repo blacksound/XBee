@@ -50,11 +50,8 @@ XBeeDevice {
 	//overriden as empty method in endDevice ipmlementation
 	prRegisterChildDevice{arg deviceType, sourceAddrHi, sourceAddrLo, sourceNetworkAddr, nodeIdentifier;
 		var deviceClass, newDevice;
-		//which means it tries to register itself
-		if(sourceAddrLo == addressLo, {
-			"wont register itself".postln;
-			^this;
-		});
+		//return early if it tries to register itself
+		if(sourceAddrLo == addressLo, {	^this; });
 		if(childDevices.includesKey(sourceAddrLo).not, {
 			deviceClass = switch(deviceType,
 				\coordinator, {XBeeCoordinatorProxy},
